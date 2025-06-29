@@ -29,7 +29,6 @@ __all__ = [
     "InvalidAiOutputError",
     "LocalPlayerAi",
     "LocalPlayer",
-    "GrpcClientPlayer",
     "World",
     "Camp",
 ]
@@ -51,12 +50,10 @@ def get_id(obj: str):
 @dataclasses.dataclass
 class Config:
     """Configuration for the Seekers game."""
-    global_wait_for_players: bool
     global_playtime: int
     global_seed: int
     global_fps: int
     global_speed: int
-    global_players: int
     global_seekers: int
     global_goals: int
     global_color_threshold: float
@@ -90,12 +87,10 @@ class Config:
         cp.read_file(file)
 
         return cls(
-            global_wait_for_players=cp.getboolean("global", "wait-for-players"),
             global_playtime=cp.getint("global", "playtime"),
             global_seed=cp.getint("global", "seed"),
             global_fps=cp.getint("global", "fps"),
             global_speed=cp.getint("global", "speed"),
-            global_players=cp.getint("global", "players"),
             global_seekers=cp.getint("global", "seekers"),
             global_goals=cp.getint("global", "goals"),
             global_color_threshold=cp.getfloat("global", "color-threshold"),
@@ -501,7 +496,7 @@ DecideCallable = typing.Callable[
 
 
 @dataclasses.dataclass
-class Player:
+class Player(abc.ABC):
     id: str
     name: str
     score: int
@@ -512,10 +507,9 @@ class Player:
     debug_drawings: list = dataclasses.field(init=False, default_factory=list)
     preferred_color: Color | None = dataclasses.field(init=False, default=None)
 
-    @abc.abstractmethod
-    def poll_ai(self, wait: bool, world: "World", goals: list[Goal],
+    def poll_ai(self, world: "World", goals: list[Goal],
                 players: dict[str, "Player"], time_: float, debug: bool):
-        ...
+        raise NotImplementedError
 
 
 class InvalidAiOutputError(Exception): ...
@@ -747,7 +741,7 @@ class LocalPlayer(Player):
                     f"AI output Seeker magnet strength must be a float, not {ai_seeker.magnet.strength!r}."
                 ) from e
 
-    def poll_ai(self, wait: bool, world: "World", goals: list[Goal], players: dict[str, "Player"],
+    def poll_ai(self, world: "World", goals: list[Goal], players: dict[str, "Player"],
                 time_: float, debug: bool):
         # ignore wait flag, supporting it would be a lot of extra code, instead always wait (blocking)
 
@@ -771,34 +765,6 @@ class LocalPlayer(Player):
             seekers={},
             ai=LocalPlayerAi.from_file(filepath)
         )
-
-
-class GrpcClientPlayer(Player):
-    """A player whose decide function is called via a gRPC server and client. See README.md new method."""
-
-    def __init__(self, token: str, *args, preferred_color: Color | None = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.was_updated = threading.Event()
-        self.num_updates = 0
-        self.preferred_color = preferred_color
-        self.token = token
-
-    def wait_for_update(self):
-        timeout = 5  # seconds
-
-        was_updated = self.was_updated.wait(timeout)
-
-        if not was_updated:
-            raise TimeoutError(
-                f"GrpcClientPlayer {self.name!r} did not update in time. (Timeout is {timeout} seconds.)"
-            )
-
-        self.was_updated.clear()
-
-    def poll_ai(self, wait: bool, world: "World", goals: list[Goal], players: dict[str, "Player"],
-                time_: float, debug: bool):
-        if wait:
-            self.wait_for_update()
 
 
 class World:

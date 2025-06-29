@@ -22,30 +22,15 @@ class SeekersGame:
     """A Seekers game. Manages the game logic, players, the gRPC server and graphics."""
 
     def __init__(self, local_ai_locations: typing.Iterable[str], config: Config,
-                 grpc_address: typing.Literal[False] | str = "localhost:7777",
-                 debug: bool = True, print_scores: bool = True, dont_kill: bool = False):
+                 debug: bool = True):
         self._logger = logging.getLogger("SeekersGame")
 
         self._logger.debug(f"Config: {config}")
 
         self.config = config
         self.debug = debug
-        self.do_print_scores = print_scores
-        self.dont_kill = dont_kill
 
         self.players = self.load_local_players(local_ai_locations)
-        if self.players and not config.global_wait_for_players:
-            self._logger.warning("Config option `global.wait-for-players=false` is not supported for local players.")
-
-        if grpc_address and len(self.players) < config.global_players:
-            try:
-                from .grpc.server import GrpcSeekersServer
-                self.grpc = GrpcSeekersServer(self, grpc_address)
-            except ImportError as e:
-                self._logger.warning("gRPC server could not be started. Import error.", exc_info=e)
-                self.grpc = None
-        else:
-            self.grpc = None
 
         self.world = World(*self.config.map_dimensions)
         self.goals = []
@@ -85,14 +70,7 @@ class SeekersGame:
         # prepare graphics
         self.renderer.init(self.players.values(), self.goals)
 
-        try:
-            if self.grpc:
-                self.grpc.start_game()
-
-            self.mainloop()
-        finally:
-            if self.grpc:
-                self.grpc.stop()
+        self.mainloop()
 
     def mainloop(self):
         """Start the game. Block until the game is over."""
@@ -109,20 +87,14 @@ class SeekersGame:
 
             # perform game logic
             for _ in range(self.config.global_speed):
-                if self.grpc:
-                    self.grpc.new_tick()
-
                 # end game if tournament_length has been reached
                 if self.config.global_playtime and self.ticks >= self.config.global_playtime:
-                    if self.dont_kill:
-                        continue
-                    else:
-                        running = False
-                        break
+                    running = False
+                    break
 
                 for player in self.players.values():
                     # self._logger.debug(f"Polling AI for player {player.name}")
-                    player.poll_ai(self.config.global_wait_for_players, self.world, self.goals, self.players,
+                    player.poll_ai(self.world, self.goals, self.players,
                                    self.ticks, self.debug)
 
                 game_logic.tick(self.players.values(), self.camps, self.goals, self.animations, self.world)
@@ -136,37 +108,9 @@ class SeekersGame:
 
         self._logger.info(f"Game over. (Ticks: {self.ticks:_})")
 
-        if self.do_print_scores:
-            self.print_scores()
+        self.print_scores()
 
         self.renderer.close()
-
-    def listen(self):
-        """Block until all players have connected unless gRPC is disabled. This may start a gRPC server."""
-
-        def wait_for_players():
-            last_diff = None
-            while len(self.players) < self.config.global_players:
-                # start can be called multiple times
-                self.grpc.start_server()
-
-                new_diff = self.config.global_players - len(self.players)
-
-                if new_diff != last_diff:
-                    self._logger.info(
-                        f"Waiting for players to connect: "
-                        f"{len(self.players)}/{self.config.global_players}"
-                    )
-                    last_diff = new_diff
-
-                time.sleep(0.1)
-
-        if len(self.players) >= self.config.global_players:
-            # already enough players
-            return
-
-        if self.grpc:
-            wait_for_players()
 
     @staticmethod
     def load_local_players(ai_locations: typing.Iterable[str]) -> dict[str, Player]:

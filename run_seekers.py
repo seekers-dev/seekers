@@ -59,11 +59,8 @@ def main():
     seekers_game = SeekersGame(
         local_ai_locations=args.ai_files,
         config=config,
-        grpc_address=address,
         debug=args.debug,
-        dont_kill=args.nokill
     )
-    seekers_game.listen()
     seekers_game.start()
 
 
