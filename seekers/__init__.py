@@ -6,9 +6,9 @@ from .seekers_types import (
     Vector,
     Physical,
     Goal,
-    Magnet,
     Seeker,
     Player,
     World,
     Camp,
 )
+from .debug_drawing import *

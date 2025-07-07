@@ -25,23 +25,18 @@ def parse_config_overrides(overrides: list[str]) -> dict[str, str]:
 
 def main():
     parser = argparse.ArgumentParser(description="Run python seekers AIs.")
-    parser.add_argument("--nogrpc", action="store_true", help="Don't host a gRPC server.")
-    parser.add_argument("--nokill", action="store_true", help="Don't kill the process after the game is over.")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode. This will enable debug drawing.")
-    parser.add_argument("-address", "-a", type=str, default="localhost:7777",
-                        help="Address of the server. (default: localhost:7777)")
-    parser.add_argument("-config", "-c", type=str, default="config.ini",
+    parser.add_argument("--scale", "-s", type=float, default=1.0,
+                        help="Skaliert die Ausgabe, sodass auch auf Bildschirmen mit niedriger Auflösung das ganze Spielfeld eingesehen werden kann.")
+    parser.add_argument("--config", "-c", type=str, default="config.ini",
                         help="Path to the config file. (default: config.ini)")
-    parser.add_argument("-config-override", "-co", action="append",
+    parser.add_argument("--config-override", "-co", action="append",
                         help="Override a config option. Use the form option=value, e.g. global.seed=43.")
-    parser.add_argument("-loglevel", "-log", "-l", type=str, default="INFO",
+    parser.add_argument("--loglevel", "--log", "-l", type=str, default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     parser.add_argument("ai_files", type=str, nargs="*", help="Paths to the AIs.")
 
     args = parser.parse_args()
-
-    if args.nogrpc and not args.ai_files:
-        raise ValueError("At least one AI file must be provided if gRPC is disabled.")
 
     config = Config.from_filepath(args.config)
     for option, value in parse_config_overrides(args.config_override or []).items():
@@ -54,12 +49,12 @@ def main():
 
     logging.basicConfig(level=args.loglevel, style="{", format=f"[{{name}}] {{levelname}}: {{message}}",
                         stream=sys.stdout)
-    address = args.address if not args.nogrpc else False
 
     seekers_game = SeekersGame(
         local_ai_locations=args.ai_files,
         config=config,
         debug=args.debug,
+        scale=args.scale
     )
     seekers_game.start()
 

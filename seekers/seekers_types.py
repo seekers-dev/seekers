@@ -21,7 +21,6 @@ __all__ = [
     "Vector",
     "Physical",
     "Goal",
-    "Magnet",
     "Seeker",
     "AiInput",
     "DecideCallable",
@@ -57,6 +56,7 @@ class Config:
     global_seekers: int
     global_goals: int
     global_color_threshold: float
+    global_total_magnet_resources: int
 
     map_width: int
     map_height: int
@@ -94,6 +94,7 @@ class Config:
             global_seekers=cp.getint("global", "seekers"),
             global_goals=cp.getint("global", "goals"),
             global_color_threshold=cp.getfloat("global", "color-threshold"),
+            global_total_magnet_resources=cp.getint("global", "total-magnet-resources"),
 
             map_width=cp.getint("map", "width"),
             map_height=cp.getint("map", "height"),
@@ -165,24 +166,62 @@ class Config:
 
 
 class Vector:
-    __slots__ = ("x", "y")
+    """
+    Ein 2D-Vektor, der zum Beispiel dafür benutzt wird, Positionen und Geschwindigkeiten zu repräsentieren.
+    Alle Winkel sind im Bogenmaß.
+
+    Examples:
+        >>> Vector(1, 2) * 3
+        Vector(3, 6)
+
+        >>> Vector(1, 2) + Vector(3, 4)
+        Vector(4, 6)
+
+        >>> -Vector(-2, 1)
+        Vector(2, -1)
+    """
+    __slots__ = "x", "y"
 
     def __init__(self, x: float = 0, y: float = 0):
+        #: die X-Komponente des Vektors
         self.x = x
+
+        #: die Y-Komponente des Vektors
         self.y = y
 
     @staticmethod
     def from_polar(angle: float, radius: float = 1) -> "Vector":
+        """
+        Erstellt einen Vektor aus Polarkoordinaten
+
+        Example:
+            >>> Vector.from_polar(angle=math.pi / 2, radius=2)
+            Vector(0, 2)
+
+
+        """
         return Vector(math.cos(angle) * radius, math.sin(angle) * radius)
 
+    def to_polar(self) -> tuple[float, float]:
+        """
+        Gibt den Winkel und den Radius dieses Vektors zurück.
+
+        Example:
+            >>> winkel, radius = Vector(x=0, y=1).to_polar()
+
+        Example:
+            >>> winkel, radius = vec1.to_polar()
+            >>> vec2 = Vector.from_polar(winkel, radius)
+            >>> vec1 == vec2
+        """
+        return math.atan2(self.y, self.x), self.length()
+
     def rotated(self, angle: float) -> "Vector":
+        """Gibt einen neuen Winkel zurück, der um angle rotiert ist."""
         return Vector(
             math.cos(angle) * self.x - math.sin(angle) * self.y,
             math.sin(angle) * self.x + math.cos(angle) * self.y,
         )
-
-    def rotated90(self) -> "Vector":
-        return Vector(-self.y, self.x)
 
     def __iter__(self):
         return iter((self.x, self.y))
@@ -229,18 +268,35 @@ class Vector:
         return self.x or self.y
 
     def dot(self, other: "Vector") -> float:
+        """
+        Gibt das Skalarprodukt dieses Vektors mit einem anderen Vektor zurück.
+
+        Example:
+            >>> Vector(0, 1).dot(Vector(1, 0))
+            0
+        """
         return self.x * other.x + self.y * other.y
 
     def squared_length(self) -> float:
         return self.x * self.x + self.y * self.y
 
     def length(self) -> float:
+        """Gibt die Länge/Betrag dieses Vektors zurück."""
         return math.sqrt(self.x * self.x + self.y * self.y)
 
     def norm(self):
         return self.length()
 
     def normalized(self):
+        """
+        Gibt eine normierte Kopie dieses Vektors zurück. (Sodass die Länge des zurückgegebenen Vektors 1 beträgt)
+
+        Ausnahme:
+            >>> Vector(0, 0).normalized()
+            Vector(0, 0)
+
+        """
+
         norm = self.length()
         if norm == 0:
             return Vector(0, 0)
@@ -251,6 +307,7 @@ class Vector:
         return Vector(func(self.x), func(self.y))
 
     def copy(self) -> "Vector":
+        """Gibt eine Kopie dieses Vektors zurück."""
         return Vector(self.x, self.y)
 
     def __repr__(self):
@@ -265,30 +322,25 @@ class Physical:
                  mass: float, radius: float, friction: float):
         self.id = id_
 
-        self.position = position
-        self.velocity = velocity
+        #: Der Mittelpunkt dieses Physicals.
+        self.position: Vector = position
+        #: Die aktuelle Geschwindigkeit dieses Physicals. Einheit: Pixel/tick
+        self.velocity: Vector = velocity
         self.acceleration = Vector(0, 0)
 
+        #: Die Masse dieses Physicals.
         self.mass = mass
         self.radius = radius
 
+        #: Die Menge an Reibung, die dieses Physical erfährt.
         self.friction = friction
-
-    def update_acceleration(self, world: "World"):
-        """Update self.acceleration. Ideally, that is a unit vector. This is supposed to be overridden by subclasses."""
-        pass
-
-    def thrust(self) -> float:
-        """Return the thrust, i.e. length of applied acceleration. This is supposed to be overridden by subclasses."""
-        return 1
 
     def move(self, world: "World"):
         # friction
         self.velocity *= 1 - self.friction
 
         # acceleration
-        self.update_acceleration(world)
-        self.velocity += self.acceleration * self.thrust()
+        self.velocity += self.acceleration
 
         # displacement
         self.position += self.velocity
@@ -317,69 +369,40 @@ class Physical:
 
 
 class Goal(Physical):
-    def __init__(self, scoring_time: float, base_thrust: float, *args, **kwargs):
+    """
+    Ein Ball, der durch Magnete angezogen oder abgestoßen werden kann. Bleibt er lange genug in einem Camp eines
+    Players, wird ein Punkt für den Spieler dieses Camps erzielt. Der Ball verschwindet und erscheint dann an einer
+    neuen zufälligen Position."""
+
+    def __init__(self, scoring_time: float, base_thrust: float, polarity: typing.Literal[1, -1], *args, **kwargs):
         Physical.__init__(self, *args, **kwargs)
 
+        #: Der Player, dem dieser Goal aktuell gehört. None falls dieser Goal noch kein Camp berührt hat.
         self.owner: "Player | None" = None
+        #: Die Anzahl an Ticks, die dieser Goal im Camp von `owner` war. Wenn das Gaol in einem anderen Tor liegt,
+        #: wird dieser Wert zunächst wieder vermindert. Bei 0, wechselt der `owner` und der Wert wird wieder erhöht.
         self.time_owned: int = 0
 
-        self.scoring_time = scoring_time
+        #: Wenn time_owned diesen Wert erreicht, wird dieser Goal gewertet.
+        self.scoring_time: int = scoring_time
         self.base_thrust = base_thrust
 
-    def thrust(self) -> float:
-        return self.base_thrust
+        #: Die Polarität dieses Goals. Wenn positiv, dann `1`, ansonsten `-1`.
+        self.polarity: typing.Literal[1, -1] = polarity
 
     @classmethod
-    def from_config(cls, id_: str, position: Vector, config: Config) -> Goal:
+    def from_config(cls, id_: str, position: Vector, polarity: typing.Literal[1, -1], config: Config) -> Goal:
         return cls(
             scoring_time=config.goal_scoring_time,
             base_thrust=config.goal_thrust,
+            polarity=polarity,
             id_=id_,
             position=position,
-            velocity=Vector(0, 0),
+            velocity=Vector(),
             mass=config.goal_mass,
             radius=config.goal_radius,
             friction=config.goal_friction
         )
-
-    def camp_tick(self, camp: "Camp") -> bool:
-        """Update the goal and return True if it has been captured."""
-        if camp.contains(self.position):
-            if self.owner == camp.owner:
-                self.time_owned += 1
-            else:
-                self.time_owned = 0
-                self.owner = camp.owner
-
-        return self.time_owned >= self.scoring_time
-
-
-class Magnet:
-    def __init__(self, strength=0):
-        self.strength = strength
-
-    @property
-    def strength(self):
-        return self._strength
-
-    @strength.setter
-    def strength(self, value):
-        if 1 >= value >= -8:
-            self._strength = value
-        else:
-            raise ValueError("Magnet strength must be between -8 and 1.")
-
-    def is_on(self):
-        return self.strength != 0
-
-    def set_repulsive(self):
-        self.strength = -8
-
-    def set_attractive(self):
-        self.strength = 1
-
-    def disable(self):
-        self.strength = 0
 
 
 class Seeker(Physical):
@@ -387,12 +410,18 @@ class Seeker(Physical):
                  **kwargs):
         Physical.__init__(self, *args, **kwargs)
 
+        #: Die Position, in deren Richtung der Seeker beschleunigt
         self.target = self.position.copy()
+        #: Anzahl an ticks, für die dieser Seeker noch deaktiviert ist. 0, wenn er nicht deaktiviert ist.
         self.disabled_counter = 0
-        self.magnet = Magnet()
+        #: Zustand des Magnets. 0=aus, -1=negativ, 1=positiv
+        self.magnet: int = 0
 
+        #: Der Player, dem dieser Seeker gehört
         self.owner = owner
+        #: Anzahl an ticks, für die dieser Seeker deaktiviert wird, wenn er getroffen wird.
         self.disabled_time = disabled_time
+        #: Faktor, mit dem der base_thrust des Seekers multipliziert wird, wenn der Magnet an ist.
         self.magnet_slowdown = magnet_slowdown
         self.base_thrust = base_thrust
 
@@ -411,74 +440,33 @@ class Seeker(Physical):
             friction=config.seeker_friction,
         )
 
-    def thrust(self) -> float:
-        magnet_slowdown_factor = self.magnet_slowdown if self.magnet.is_on() else 1
-
-        return self.base_thrust * magnet_slowdown_factor
-
     @property
     def is_disabled(self):
         return self.disabled_counter > 0
 
-    def disable(self):
-        self.disabled_counter = self.disabled_time
-
-    def disabled(self):
-        return self.is_disabled
-
-    def magnetic_force(self, world: World, pos: Vector) -> Vector:
-        def bump(r) -> float:
-            return math.exp(1 / (r ** 2 - 1)) if r < 1 else 0
-
-        torus_diff = world.torus_difference(self.position, pos)
-        torus_diff_len = torus_diff.length()
-
-        r = torus_diff_len / world.diameter()
-        direction = (torus_diff / torus_diff_len) if torus_diff_len != 0 else Vector(0, 0)
-
-        if self.is_disabled:
-            return Vector(0, 0)
-
-        return - direction * (self.magnet.strength * bump(r * 10))
-
-    def update_acceleration(self, world: World):
-        if self.disabled_counter == 0:
-            self.acceleration = world.torus_direction(self.position, self.target)
-        else:
-            self.acceleration = Vector(0, 0)
-
-    def magnet_effective(self):
+    @property
+    def _magnet_effective(self):
         """Return whether the magnet is on and the seeker is not disabled."""
-        return self.magnet.is_on() and not self.is_disabled
+        if self.is_disabled:
+            return 0
+        else:
+            return self.magnet
 
-    def collision(self, other: "Seeker", world: World):
-        if not (self.magnet_effective() or other.magnet_effective()):
-            self.disable()
-            other.disable()
+    def set_magnet_negative(self):
+        """Setzt den Magneten dieses Seekers auf negativ. Äquivalent zu `seeker.magnet = -1`."""
+        self.magnet = -1
 
-        if self.magnet_effective():
-            self.disable()
-        if other.magnet_effective():
-            other.disable()
-
-        Physical.collision(self, other, world)
-
-    # methods below are left in for compatibility
-    def set_magnet_repulsive(self):
-        self.magnet.set_repulsive()
-
-    def set_magnet_attractive(self):
-        self.magnet.set_attractive()
-
-    def disable_magnet(self):
-        self.magnet.disable()
+    def set_magnet_positive(self):
+        """Setzt den Magneten dieses Seekers auf positiv. Äquivalent zu `seeker.magnet = 1`."""
+        self.magnet = 1
 
     def set_magnet_disabled(self):
-        self.magnet.disable()
+        """Schaltet den Magneten dieses Seekers aus. Äquivalent zu `seeker.magnet = 0`."""
+        self.magnet = 0
 
-    @property
-    def max_speed(self):
-        return self.base_thrust / self.friction
+    # @property
+    # def max_speed(self):
+    #     return self.base_thrust / self.friction
 
 
 AiInput = tuple[
@@ -496,13 +484,19 @@ DecideCallable = typing.Callable[
 
 
 @dataclasses.dataclass
-class Player(abc.ABC):
+class Player:
     id: str
+    #: Der Name des Spielers
     name: str
+    #: Der aktuelle Punktestand dieses Spielers
     score: int
+    #: Die Seekers des Spielers.
+    #: Diese können z. B. mit `for seeker in player.seekers.values():...` iteriert werden
     seekers: dict[str, Seeker]
 
+    #: Die Farbe des Spielers
     color: Color | None = dataclasses.field(init=False, default=None)
+    #: Das Camp, das zu diesem Spieler gehört
     camp: typing.Union["Camp", None] = dataclasses.field(init=False, default=None)
     debug_drawings: list = dataclasses.field(init=False, default_factory=list)
     preferred_color: Color | None = dataclasses.field(init=False, default=None)
@@ -560,11 +554,17 @@ class LocalPlayerAi:
 
             return mod_dict["decide"], preferred_color
         except Exception as e:
-            # print(f"Error while loading AI {filepath!r}", file=sys.stderr)
-            # traceback.print_exc(file=sys.stderr)
-            # print(file=sys.stderr)
+            # raise
 
-            raise InvalidAiOutputError(f"Error while loading AI {filepath!r}. Dummy AIs are not supported.") from e
+            import sys
+            import traceback
+            print(f"Error while loading AI {filepath!r}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            print(file=sys.stderr)
+
+            return lambda a, *_: a, None
+
+            # raise InvalidAiOutputError(f"Error while loading AI {filepath!r}. Dummy AIs are not supported.") from e
 
     @classmethod
     def from_file(cls, filepath: str) -> "LocalPlayerAi":
@@ -576,7 +576,7 @@ class LocalPlayerAi:
         new_timestamp = os.path.getctime(self.filepath)
         if new_timestamp > self.timestamp:
             logger = logging.getLogger("AiReloader")
-            logger.debug(f"Reloading AI {self.filepath!r}.")
+            logger.info(f"Reloading AI {self.filepath!r}.")
 
             self.decide_function, self.preferred_color = self.load_module(self.filepath)
             self.timestamp = new_timestamp
@@ -639,16 +639,20 @@ class LocalPlayer(Player):
             ai_goal.velocity = goal.velocity.copy()
             ai_goal.owner = self._ai_players[goal.owner.id] if goal.owner else None
             ai_goal.time_owned = goal.time_owned
+            ai_goal.polarity = goal.polarity
 
         for player in players.values():
             for seeker_id, seeker in player.seekers.items():
                 ai_seeker = self._ai_seekers[seeker_id]
 
-                ai_seeker.position = seeker.position.copy()
-                ai_seeker.velocity = seeker.velocity.copy()
-                ai_seeker.target = seeker.target.copy()
+                ai_seeker.position.x = seeker.position.x
+                ai_seeker.position.y = seeker.position.y
+                ai_seeker.velocity.x = seeker.velocity.x
+                ai_seeker.velocity.y = seeker.velocity.y
+                ai_seeker.target.x = seeker.target.x
+                ai_seeker.target.y = seeker.target.y
                 ai_seeker.disabled_counter = seeker.disabled_counter
-                ai_seeker.magnet.strength = seeker.magnet.strength
+                ai_seeker.magnet = seeker.magnet
 
     def get_ai_input(self,
                      world: "World",
@@ -698,7 +702,8 @@ class LocalPlayer(Player):
 
             return call()
         except Exception as e:
-            raise InvalidAiOutputError(f"AI {self.ai.filepath!r} raised an exception") from e
+            return ai_input[0]
+            # raise InvalidAiOutputError(f"AI {self.ai.filepath!r} raised an exception") from e
 
     def process_ai_output(self, ai_output: typing.Any):
         if not isinstance(ai_output, list):
@@ -722,9 +727,9 @@ class LocalPlayer(Player):
                 raise InvalidAiOutputError(
                     f"AI output Seeker target must be a Vector, not {type(ai_seeker.target)!r}.")
 
-            if not isinstance(ai_seeker.magnet, Magnet):
+            if not isinstance(ai_seeker.magnet, int) or ai_seeker.magnet not in (-1, 0, 1):
                 raise InvalidAiOutputError(
-                    f"AI output Seeker magnet must be a Magnet, not {type(ai_seeker.magnet)!r}.")
+                    f"AI output Seeker magnet must be 1, 0 or -1, not {ai_seeker.magnet!r}.")
 
             try:
                 own_seeker.target.x = float(ai_seeker.target.x)
@@ -734,12 +739,7 @@ class LocalPlayer(Player):
                     f"AI output Seeker target Vector components must be numbers, not {ai_seeker.target!r}."
                 ) from e
 
-            try:
-                own_seeker.magnet.strength = float(ai_seeker.magnet.strength)
-            except ValueError as e:
-                raise InvalidAiOutputError(
-                    f"AI output Seeker magnet strength must be a float, not {ai_seeker.magnet.strength!r}."
-                ) from e
+            own_seeker.magnet = ai_seeker.magnet
 
     def poll_ai(self, world: "World", goals: list[Goal], players: dict[str, "Player"],
                 time_: float, debug: bool):
@@ -768,10 +768,12 @@ class LocalPlayer(Player):
 
 
 class World:
-    """The world in which the game takes place. This class mainly handles the torus geometry."""
+    """Die Welt, in der das Spiel stattfindet. Diese Klasse behandelt hauptsächlich die Torus-Geometrie."""
 
     def __init__(self, width, height):
+        #: Die Breite der Welt
         self.width = width
+        #: Die Höhe der Welt
         self.height = height
 
     def normalize_position(self, pos: Vector):
@@ -791,9 +793,12 @@ class World:
         return self.geometry.length()
 
     def middle(self) -> Vector:
+        """Gibt die Mitte der Welt zurück."""
         return self.geometry / 2
 
     def torus_difference(self, left: Vector, right: Vector, /) -> Vector:
+        """Gibt die Differenz zwischen beider Vektoren auf der Toruswelt zurück."""
+
         def diff1d(l, a, b):
             delta = abs(a - b)
             return b - a if delta < l - delta else a - b
@@ -802,12 +807,16 @@ class World:
                       diff1d(self.height, left.y, right.y))
 
     def torus_distance(self, left: Vector, right: Vector, /) -> float:
+        """Gibt die kleinste Distanz zwischen den beiden gegebenen Vektoren zurück, wobei die Torusgeometrie
+        berücksichtigt wird."""
         return self.torus_difference(left, right).length()
 
     def torus_direction(self, left: Vector, right: Vector, /) -> Vector:
+        """Gibt den normalisierten Vektor zurück, der von left nach right zeigt."""
         return self.torus_difference(left, right).normalized()
 
     def index_of_nearest(self, pos: Vector, positions: list) -> int:
+        """Gibt den Index der Position in der gegebenen Liste zurück, die der gegebenen Position am nächsten ist."""
         d = self.torus_distance(pos, positions[0])
         j = 0
         for i, p in enumerate(positions[1:]):
@@ -818,10 +827,12 @@ class World:
         return j
 
     def nearest_goal(self, pos: Vector, goals: list) -> Goal:
+        """Gibt das Goal zurück, das am nächsten zur gegebenen Position ist."""
         i = self.index_of_nearest(pos, [g.position for g in goals])
         return goals[i]
 
     def nearest_seeker(self, pos: Vector, seekers: list) -> Seeker:
+        """Gibt den Seeker zurück, der am nächsten zur gegebenen Position ist."""
         i = self.index_of_nearest(pos, [s.position for s in seekers])
         return seekers[i]
 
@@ -848,23 +859,42 @@ class World:
 
         return [player.camp for player in players]
 
+    def magnetic_force(self, seeker_pos: Vector, pos: Vector) -> Vector:
+        def bump(r) -> float:
+            return math.exp(1 / (r ** 2 - 1)) if r < 1 else 0
+
+        torus_diff = self.torus_difference(seeker_pos, pos)
+        torus_diff_len = torus_diff.length()
+
+        r = torus_diff_len / self.diameter()
+        direction = (torus_diff / torus_diff_len) if torus_diff_len != 0 else Vector(0, 0)
+
+        return - direction * bump(r * 10)
+
 
 @dataclasses.dataclass
 class Camp:
     id: str
+    #: Der Spieler, dem das Camp gehört
     owner: Player
+    # Der Mittelpunkt des Camps
     position: Vector
+    #: Die Breite des Camps
     width: float
+    #: Die Höhe des Camps
     height: float
 
     def contains(self, pos: Vector) -> bool:
+        """Überprüft, ob die Position innerhalb des Camps liegt"""
         delta = self.position - pos
         return 2 * abs(delta.x) < self.width and 2 * abs(delta.y) < self.height
 
     @property
     def top_left(self) -> Vector:
+        """Die obere linke Ecke des Camps"""
         return self.position - Vector(self.width, self.height) / 2
 
     @property
     def bottom_right(self) -> Vector:
+        """Die obere rechte Ecke des Camps"""
         return self.position + Vector(self.width, self.height) / 2

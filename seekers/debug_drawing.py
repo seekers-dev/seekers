@@ -49,14 +49,26 @@ class CircleDebugDrawing(DebugDrawing):
 
 
 def draw_text(text: str, position: Vector, color: tuple[int, int, int] = (255, 255, 255), center: bool = True):
+    """
+    Zeichnet Text an der angegebenen Position in der gegebenen Farbe. Center gibt an, ob der Text vertikal
+    und horizontal zentriert werden soll.
+    """
     add_debug_drawing_func_ctxtvar.get()(TextDebugDrawing(text, position, color, center))
 
 
 def draw_line(start: Vector, end: Vector, color: tuple[int, int, int] = (255, 255, 255), width: int = 2):
+    """
+    Zeichnet eine Linie von start nach end in der gegebenen Farbe und Breite.
+    """
     add_debug_drawing_func_ctxtvar.get()(LineDebugDrawing(start, end, color, width))
 
 
 def draw_circle(position: Vector, radius: float, color: tuple[int, int, int] = (255, 255, 255), width: int = 2):
+    """
+    Zeichnet einen Kreis an der angegebenen Position mit dem gegebenen Radius, der Farbe und der Randdicke.
+
+    Wenn die Randdicke 0 ist, wird der Kreis gefüllt gezeichnet.
+    """
     add_debug_drawing_func_ctxtvar.get()(CircleDebugDrawing(position, radius, color, width))
 
 

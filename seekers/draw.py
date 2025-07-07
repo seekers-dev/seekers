@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 import abc
+import logging
 import typing
 import math
 
 import pygame
+from pygame.transform import scale
 
 from .colors import *
 from .seekers_types import *
+from . import game
+from . import sequential_probability_ratio_test
 
 
 class Animation(abc.ABC):
@@ -15,7 +21,7 @@ class Animation(abc.ABC):
         self.age = 0
 
     @abc.abstractmethod
-    def draw(self, renderer: "GameRenderer"):
+    def draw(self, renderer: GameRenderer):
         ...
 
 
@@ -28,7 +34,7 @@ class ScoreAnimation(Animation):
         self.color = color
         self.radius = radius
 
-    def draw(self, renderer: "GameRenderer"):
+    def draw(self, renderer: GameRenderer):
         t = self.age / self.duration
         r = self.radius + 50 * t
 
@@ -36,34 +42,34 @@ class ScoreAnimation(Animation):
 
 
 class GameRenderer:
-    def __init__(self, config: Config, debug_mode: bool = False):
+    def __init__(self, game_: game.SeekersGame):
         pygame.font.init()
-        self.font = pygame.font.SysFont(["Cascadia Code", "Fira Code", "Consolas", "monospace"], 20, bold=True)
+        self.font = pygame.font.SysFont(["Cascadia Code", "Fira Code", "Consolas", "monospace"], 20)
         self.background_color = (0, 0, 30)
 
         self.player_name_images = {}
         self.screen = None
 
-        self.config = config
-        self.debug_mode = debug_mode
+        self.game = game_
+        self.seeker_display_mode: int = 0
 
         self.world = World(self.config.map_width, self.config.map_height)
+
+    @property
+    def config(self):
+        return self.game.config
 
     def init(self, players: typing.Iterable[Player], goals: list[Goal]):
         pygame.init()
 
         for p in players:
             name = p.name
-
-            if self.debug_mode:
-                if isinstance(p, GrpcClientPlayer):
-                    name += f" (gRPC)"
-                elif isinstance(p, LocalPlayer):
-                    name += f" (local)"
-
             self.player_name_images[p.id] = self.font.render(name, True, p.color)
 
-        self.screen = pygame.display.set_mode(self.config.map_dimensions)
+        self._screen = pygame.display.set_mode(
+            (self.config.map_dimensions[0] // self.game.scale, self.config.map_dimensions[1] // self.game.scale)
+        )
+        self.screen = pygame.Surface(self.config.map_dimensions)
         pygame.display.set_caption("Seekers")
 
     def draw_torus(self, func: typing.Callable[[Vector], typing.Any], p1: Vector, p2: Vector):
@@ -110,6 +116,22 @@ class GameRenderer:
 
     def draw(self, players: typing.Collection[Player], camps: typing.Iterable[Camp], goals: typing.Iterable[Goal],
              animations: list[Animation], clock: pygame.time.Clock):
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                return False
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_s:
+                    self.seeker_display_mode += 1
+                    self.seeker_display_mode %= 3
+                elif e.key == pygame.K_SPACE:
+                    self.game.paused = not self.game.paused
+                elif e.key == pygame.K_UP:
+                    self.config.global_speed += 1
+                    logging.getLogger(self.__class__.__name__).info(f"Speed: {self.config.global_speed}")
+                elif e.key == pygame.K_DOWN:
+                    self.config.global_speed = max(0, self.config.global_speed - 1)
+                    logging.getLogger(self.__class__.__name__).info(f"Speed: {self.config.global_speed}")
+
         # clear screen
         self.screen.fill(self.background_color)
 
@@ -119,12 +141,24 @@ class GameRenderer:
 
         # draw goals
         for goal in goals:
-            color = (
-                interpolate_color((255, 255, 255), goal.owner.color,
-                                  min(1.0, (goal.time_owned / goal.scoring_time) ** 2))
-                if goal.owner else (255, 255, 255)
-            )
-            self.draw_circle(color, goal.position, goal.radius)
+            if goal.polarity == 1:
+                color = (
+                    interpolate_color((255, 255, 255), goal.owner.color,
+                                      min(1.0, (goal.time_owned / goal.scoring_time) ** 2))
+                    if goal.owner else (255, 255, 255)
+                )
+                self.draw_circle(color, goal.position, goal.radius + 2)
+                # self.draw_circle((255, 255, 255), goal.position, goal.radius, width=2)
+                self.draw_text("+", (0, 0, 0), goal.position, True)
+            else:
+                color = (
+                    interpolate_color((0, 0, 0), goal.owner.color,
+                                      min(1.0, (goal.time_owned / goal.scoring_time) ** 2))
+                    if goal.owner else (0, 0, 0)
+                )
+                self.draw_circle(color, goal.position, goal.radius + 2)
+                self.draw_circle((255, 255, 255), goal.position, goal.radius + 2, width=1)
+                self.draw_text("-", (255, 255, 255), goal.position, True)
 
         # draw jet streams
         for player in players:
@@ -136,7 +170,20 @@ class GameRenderer:
         # draw seekers
         for player in players:
             for i, seeker in enumerate(player.seekers.values()):
-                self.draw_seeker(seeker, player, str(i))
+                if self.seeker_display_mode == 1:
+                    debug_str = str(i)
+                elif self.seeker_display_mode == 2:
+                    if seeker.is_disabled:
+                        debug_str = {1: '+', -1: '-', 0: ""}[seeker.magnet]
+                    else:
+                        if seeker.magnet == 0:
+                            debug_str = ""
+                        else:
+                            debug_str = f"{ {1: '+', -1: '-'}[seeker.magnet] }{self.config.global_total_magnet_resources - seeker._num_magnet + 1}"
+                else:
+                    debug_str = ""
+
+                self.draw_seeker(seeker, player, debug_str)
 
             for debug_drawing in player.debug_drawings:
                 debug_drawing.draw(self)
@@ -149,7 +196,11 @@ class GameRenderer:
         self.draw_information(players, Vector(10, 10), clock)
 
         # update display
+        self._screen.blit(pygame.transform.scale(self.screen, self._screen.get_rect().size), (0, 0))
+
         pygame.display.flip()
+
+        return True
 
     def draw_seeker(self, seeker: Seeker, player: Player, debug_str: str):
         color = player.color
@@ -159,8 +210,7 @@ class GameRenderer:
         self.draw_circle(color, seeker.position, seeker.radius, width=0)
         self.draw_halo(seeker, color)
 
-        if self.debug_mode:
-            self.draw_text(debug_str, (0, 0, 0), seeker.position)
+        self.draw_text(debug_str, (0, 0, 0), seeker.position)
 
     def draw_halo(self, seeker: Seeker, color: Color):
         adjpos = seeker.position
@@ -170,12 +220,14 @@ class GameRenderer:
         mu = abs(math.sin((int(pygame.time.get_ticks() / 30) % 50) / 50 * 2 * math.pi)) ** 2
         self.draw_circle(interpolate_color(color, [0, 0, 0], mu), adjpos, 3 + seeker.radius, 3)
 
-        if not seeker.magnet.is_on():
+        if not seeker.magnet:
             return
 
-        for offset in 0, 10, 20, 30, 40:
-            mu = int(-seeker.magnet.strength * pygame.time.get_ticks() / 50 + offset) % 50
-            self.draw_circle(interpolate_color(color, [0, 0, 0], mu / 50), adjpos, mu + seeker.radius, 2)
+        d = 100 // seeker._num_magnet
+
+        for o in range(0, d + 10, 10):
+            mu = (int(-seeker.magnet * pygame.time.get_ticks() / d * 5 + o) % d)
+            self.draw_circle(interpolate_color(color, self.background_color, mu / d), adjpos, mu + seeker.radius, 2)
 
     def draw_jet_stream(self, seeker: Seeker, direction: Vector):
         length = seeker.radius * 3
@@ -185,8 +237,18 @@ class GameRenderer:
 
     def draw_information(self, players: typing.Collection[Player], pos: Vector, clock: pygame.time.Clock):
         # draw fps
-        fps = int(clock.get_fps())
-        self.draw_text(str(fps), (250, 250, 250), pos, center=False)
+        if self.game.sprt is not None:
+            alpha, beta = self.game.sprt.get_h01_probs()
+            text = f"FPS: {clock.get_fps():.1f} SPRT: P(H0)={alpha:.3%} P(H1)={beta:.3%}"
+        else:
+            text = f"FPS: {clock.get_fps():.1f}"
+
+        text = text + {0: "", 1: ", displaying Indexes", 2: ", displaying Magnet"}[self.seeker_display_mode]
+
+        if self.game.paused:
+            text = text + " (PAUSED)"
+
+        self.draw_text(text, (250, 250, 250), pos, center=False)
 
         dx = Vector(40, 0)
         dy = Vector(0, 30)

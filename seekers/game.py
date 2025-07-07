@@ -5,12 +5,12 @@ import glob
 import logging
 import os
 import random
-import time
 import typing
 import pygame
 
+
 from .seekers_types import *
-from . import colors
+from . import colors, sequential_probability_ratio_test
 from . import draw
 from . import game_logic
 
@@ -22,7 +22,7 @@ class SeekersGame:
     """A Seekers game. Manages the game logic, players, the gRPC server and graphics."""
 
     def __init__(self, local_ai_locations: typing.Iterable[str], config: Config,
-                 debug: bool = True):
+                 debug: bool = True, scale: float = 1):
         self._logger = logging.getLogger("SeekersGame")
 
         self._logger.debug(f"Config: {config}")
@@ -37,10 +37,13 @@ class SeekersGame:
         self.camps = []
 
         self.renderer = draw.GameRenderer(
-            self.config,
-            debug_mode=self.debug
+            self
         )
+        self.scale = scale
         self.animations = []
+        self.paused = False
+
+        self.sprt = None
 
         self.ticks = 0
 
@@ -52,9 +55,16 @@ class SeekersGame:
 
         random.seed(self.config.global_seed)
 
+        assert self.config.global_goals % 2 == 0
+
         # initialize goals
-        self.goals = [Goal.from_config(get_id("Goal"), self.world.random_position(), self.config) for _ in
-                      range(self.config.global_goals)]
+        self.goals = [
+            Goal.from_config(get_id("Goal"), self.world.random_position(), 1, self.config)
+            for _ in range(self.config.global_goals // 2)
+        ] + [
+            Goal.from_config(get_id("Goal"), self.world.random_position(), -1, self.config)
+            for _ in range(self.config.global_goals // 2)
+        ]
 
         # initialize players
         for p in self.players.values():
@@ -70,47 +80,72 @@ class SeekersGame:
         # prepare graphics
         self.renderer.init(self.players.values(), self.goals)
 
-        self.mainloop()
+        return self.mainloop()
 
     def mainloop(self):
         """Start the game. Block until the game is over."""
         random.seed(self.config.global_seed)
         running = True
 
-        while running:
-            # self._logger.debug(f"Tick {self.ticks:_}")
+        if self.config.global_playtime == -1 and len(self.players) == 2:
+            self._logger.info("Stopping game when both alpha and beta < 0.01")
+            self.sprt = sequential_probability_ratio_test.SPRT(p0=0.505, p1=0.495, alpha=0.05, beta=0.05)
 
-            # handle pygame events
-            for e in pygame.event.get():
-                if e.type == pygame.QUIT:
-                    running = False
+            player1, player2 = self.players.values()
 
-            # perform game logic
-            for _ in range(self.config.global_speed):
-                # end game if tournament_length has been reached
-                if self.config.global_playtime and self.ticks >= self.config.global_playtime:
-                    running = False
-                    break
+            def callback(camp: Camp):
+                if camp.owner is player1:
+                    self.sprt.update(1)
+                else:
+                    self.sprt.update(0)
+        else:
+            self._logger.info(f"Stopping game when ticks exceed {self.config.global_playtime}")
+            callback = None
 
-                for player in self.players.values():
-                    # self._logger.debug(f"Polling AI for player {player.name}")
-                    player.poll_ai(self.world, self.goals, self.players,
-                                   self.ticks, self.debug)
+        try:
+            while running:
+                # self._logger.debug(f"Tick {self.ticks:_}")
 
-                game_logic.tick(self.players.values(), self.camps, self.goals, self.animations, self.world)
+                # perform game logic
+                for _ in range(self.config.global_speed):
+                    # end game if tournament_length has been reached
+                    if self.sprt is None:
+                        if self.ticks >= self.config.global_playtime:
+                            running = False
+                            break
+                    else:
+                        if self.sprt.finished:
+                            running = False
 
-                self.ticks += 1
+                            if player1.score > player2.score:
+                                return 1, 0
+                            else:
+                                return 0, 1
 
-            # draw graphics
-            self.renderer.draw(self.players.values(), self.camps, self.goals, self.animations, self.clock)
+                        if self.ticks > 1_000_000:
+                            return .5, .5
 
-            self.clock.tick(self.config.global_fps)
+                    if not self.paused:
+                        for player in self.players.values():
+                            # self._logger.debug(f"Polling AI for player {player.name}")
+                            player.poll_ai(self.world, self.goals, self.players,
+                                           self.ticks, self.debug)
 
-        self._logger.info(f"Game over. (Ticks: {self.ticks:_})")
+                        game_logic.tick(self.players.values(), self.camps, self.goals, self.animations, self.world, self.config, callback)
 
-        self.print_scores()
+                        self.ticks += 1
 
-        self.renderer.close()
+                # draw graphics
+                running &= self.renderer.draw(self.players.values(), self.camps, self.goals, self.animations, self.clock)
+
+                self.clock.tick(self.config.global_fps)
+
+        finally:
+            self._logger.info(f"Game over. (Ticks: {self.ticks:_})")
+
+            self.print_scores()
+
+            self.renderer.close()
 
     @staticmethod
     def load_local_players(ai_locations: typing.Iterable[str]) -> dict[str, Player]:
@@ -129,20 +164,6 @@ class SeekersGame:
                 raise Exception(f"Invalid AI location: {location!r} is neither a file nor a directory.")
 
         return out
-
-    def add_player(self, player: Player):
-        """Add a player to the game while it is not running yet and raise a GameFullError if the game is full.
-        This function is used by the gRPC server."""
-
-        if self.camps:
-            raise GameFullError("Game must not be running to add a player.")
-
-        if len(self.players) >= self.config.global_players:
-            raise GameFullError(
-                f"Game full. Cannot add more players. Max player count is {self.config.global_players}."
-            )
-
-        self.players |= {player.id: player}
 
     def print_scores(self):
         for player in sorted(self.players.values(), key=lambda p: p.score, reverse=True):

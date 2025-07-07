@@ -15,17 +15,25 @@ def decide(own_seekers: list[Seeker], other_seekers: list[Seeker], all_seekers: 
     # print(tick)
     # print(foo(tick))
 
+    # draw_text(str(passed_time), world.middle())
+
     for i, s in enumerate(own_seekers):  # i is the index of the seeker and s is the seeker object
         g = goals[i]  # selects the goal with the same index as the seeker
         dist = world.torus_distance(g.position,
                                     s.position)  # calculates the distance of the seeker to the selected goal
+        # draws a line from the seekers position to the goal position
+        # draw_line(s.position, g.position)
+
         if dist < 40:  # decides if seeker is close enough to the goal
             # if the seeker is close enough he enables his magnet and aims for the own camp
-            s.set_magnet_attractive()
+            # this is done by setting the magnet to the opposite polarity of the goal
+            s.magnet = -g.polarity
+
+            # aim for own camp by setting the seeker target
             s.target = own_camp.position
         else:
             # otherwise it disables its magnet and aims for the goal
-            s.disable_magnet()
+            s.set_magnet_disabled()
             s.target = g.position
 
     return own_seekers
