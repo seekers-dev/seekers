@@ -1,1 +1,13 @@
+### Freeze
+build
+*.zip
+
+### Python
+venv
 *.pyc
+
+### Generated files
+seekers/api
+
+### JetBrains
+.idea/
