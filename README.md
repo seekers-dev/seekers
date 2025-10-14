@@ -1,9 +1,9 @@
 <div align=center>
-    <h1 align=center>Seekers Py</h1>
+    <h1 align=center>Seekers</h1>
     <!-- Badges -->
     <div>
-        <img src="https://github.com/seekers-dev/seekers-py/actions/workflows/python-app.yml/badge.svg" alt="Python Version 3.9/3.10">
-        <img src="https://github.com/seekers-dev/seekers-py/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL">
+        <img src="https://github.com/seekers-dev/seekers/actions/workflows/python-app.yml/badge.svg" alt="Python Version 3.9/3.10">
+        <img src="https://github.com/seekers-dev/seekers/actions/workflows/github-code-scanning/codeql/badge.svg" alt="CodeQL">
         <img src="https://github.com/seekers-dev/seekers/actions/workflows/python-app.yml/badge.svg" alt="pre-release">
     </div>
     <i>Learn to code with games.</i>
