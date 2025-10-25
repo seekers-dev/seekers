@@ -8,7 +8,8 @@ from seekers.api.physical_pb2 import Physical as PhysicalAPI
 from seekers.api.player_pb2 import Player as PlayerAPI
 from seekers.api.seeker_pb2 import Seeker as SeekerAPI
 from seekers.api.vector2d_pb2 import Vector2D as Vector2DAPI
-from seekers.api.seekers_pb2 import Section as SectionAPI
+from seekers.api.seekers_pb2 import JoinResponse
+SectionAPI = JoinResponse.Section
 
 from seekers import Camp, Player, Goal, Physical, Config
 from seekers.game.vector import Vector
