@@ -22,7 +22,7 @@ class GrpcSeekersServicer(SeekersServicer):
         self.current_status: CommandResponse | None = None
         # the right thing here would be a Condition, but I found that too complicated
         self.next_game_tick_event = threading.Event()
-        self.tokens: set[str] = set()
+        self.players_by_token: dict[str, game.Player] = {}
 
     def new_tick(self):
         """Invalidate the cached game status. Called by SeekersGame."""
@@ -57,7 +57,10 @@ class GrpcSeekersServicer(SeekersServicer):
 
             # check if seeker is owned by player
             # noinspection PyTypeChecker
-            if not isinstance(seeker.owner, seekers.GrpcClientPlayer) or seeker.owner.token != request.token:
+            if (
+                not isinstance(seeker.owner, seekers.GrpcClientPlayer)
+                or (seeker.owner.id != self.players_by_token[request.token].id)
+            ):
                 context.abort(
                     grpc.StatusCode.PERMISSION_DENIED,
                     f"Seeker with id {command.seeker_id!r} (owner player id: {seeker.owner.id!r}) "
@@ -71,7 +74,7 @@ class GrpcSeekersServicer(SeekersServicer):
         # wait for next game tick except if no commands were sent
         if request.commands:
             # noinspection PyUnboundLocalVariable
-            seeker.owner.was_updated.set()
+            seeker.owner.was_updated[request.token].set()
 
             # self._logger.debug(f"Waiting for next game tick.")
             self.next_game_tick_event.wait()
@@ -88,26 +91,35 @@ class GrpcSeekersServicer(SeekersServicer):
             return self.current_status
 
     def join_game(self, name: str, color: seekers.Color | None) -> tuple[str, str]:
-        # add the player with a new name if the requested name is already taken
-        _requested_name = name
-        i = 2
-        while _requested_name in {p.name for p in self.game.players.values()}:
-            _requested_name = f"{name} ({i})"
-            i += 1
+        # # add the player with a new name if the requested name is already taken
+        # _requested_name = name
+        # i = 2
+        # while _requested_name in {p.name for p in self.game.players.values()}:
+        #     _requested_name = f"{name} ({i})"
+        #     i += 1
 
         # create new player
         new_token = seekers.get_id("Token")
         player = seekers.GrpcClientPlayer(
-            token=new_token,
-            id=seekers.get_id("Player"),
-            name=_requested_name,
+            # token=new_token,
+            id=name,
+            name=name,
             score=0,
             seekers={},
             preferred_color=color
         )
-        self.game.add_player(player)
+        from seekers.game import GameFullError
 
-        self.tokens.add(new_token)
+        assert not self.game.camps, GameFullError("Game must not be running to add a player.")
+
+        if len(self.game.players) >= self.game.config.global_players:
+            raise GameFullError(
+                f"Game full. Cannot add more players. Max player count is {self.game.config.global_players}."
+            )
+
+        self.game.players[player.id] = player
+        self.players_by_token[new_token] = player
+
         self._logger.info(f"Player {player.name!r} joined the game. ({player.id})")
 
         return new_token, player.id
@@ -116,25 +128,32 @@ class GrpcSeekersServicer(SeekersServicer):
         self._logger.debug(f"Received JoinRequest: {request.name=} {request.color=}")
 
         if request.name is None:
-            requested_name = "Player"
-        else:
-            requested_name = request.name.strip()
+            return context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Player name is mandatory.")
 
-            if not requested_name:
-                context.abort(grpc.StatusCode.INVALID_ARGUMENT,
-                              f"Requested name must not be empty or only consist of whitespace.")
+        requested_name = request.name.strip()
+
+        if not requested_name:
+            return context.abort(grpc.StatusCode.INVALID_ARGUMENT,
+                                 f"Requested name must not be empty or only consist of whitespace.")
+
+        if requested_name not in self.game.players:
+            color = color_to_seekers(request.color) if request.color is not None else None
+
+            # add player to game
+            try:
+                new_token, player_id = self.join_game(requested_name, color)
+            except game.GameFullError:
+                context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Game is full.")
                 return
 
-        color = color_to_seekers(request.color) if request.color is not None else None
+            return JoinResponse(token=new_token, player_id=player_id, sections=config_to_grpc(self.game.config))
 
-        # add player to game
-        try:
-            new_token, player_id = self.join_game(requested_name, color)
-        except game.GameFullError:
-            context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Game is full.")
-            return
+        else:
+            player = self.game.players[requested_name]
 
-        return JoinResponse(token=new_token, player_id=player_id, sections=config_to_grpc(self.game.config))
+            new_token = seekers.get_id("Token")
+            self.players_by_token[new_token] = player
+            return JoinResponse(token=new_token, player_id=requested_name, sections=config_to_grpc(self.game.config))
 
 
 class GrpcSeekersServer:

@@ -167,6 +167,7 @@ class SeekersGame:
 
         if self.grpc:
             wait_for_players()
+            input("FERTIG? ")
 
     @staticmethod
     def load_local_players(ai_locations: typing.Iterable[str]) -> dict[str, Player]:
@@ -185,20 +186,6 @@ class SeekersGame:
                 raise Exception(f"Invalid AI location: {location!r} is neither a file nor a directory.")
 
         return out
-
-    def add_player(self, player: Player):
-        """Add a player to the game while it is not running yet and raise a GameFullError if the game is full.
-        This function is used by the gRPC server."""
-
-        if self.camps:
-            raise GameFullError("Game must not be running to add a player.")
-
-        if len(self.players) >= self.config.global_players:
-            raise GameFullError(
-                f"Game full. Cannot add more players. Max player count is {self.config.global_players}."
-            )
-
-        self.players |= {player.id: player}
 
     def print_scores(self):
         for player in sorted(self.players.values(), key=lambda p: p.score, reverse=True):

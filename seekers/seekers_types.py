@@ -776,24 +776,26 @@ class LocalPlayer(Player):
 class GrpcClientPlayer(Player):
     """A player whose decide function is called via a gRPC server and client. See README.md new method."""
 
-    def __init__(self, token: str, *args, preferred_color: Color | None = None, **kwargs):
+    def __init__(self, *args, preferred_color: Color | None = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.was_updated = threading.Event()
+        # noinspection PyTypeChecker
+        self.was_updated: dict[str, threading.Event] = defaultdict(lambda: threading.Event())
         self.num_updates = 0
         self.preferred_color = preferred_color
-        self.token = token
+        # self.token = token
 
     def wait_for_update(self):
         timeout = 5  # seconds
 
-        was_updated = self.was_updated.wait(timeout)
+        for token, event in self.was_updated.items():
+            was_updated = event.wait(timeout)
 
-        if not was_updated:
-            raise TimeoutError(
-                f"GrpcClientPlayer {self.name!r} did not update in time. (Timeout is {timeout} seconds.)"
-            )
+            if not was_updated:
+                raise TimeoutError(
+                    f"GrpcClientPlayer {self.name!r} (token {token}) did not update in time. (Timeout is {timeout} seconds.)"
+                )
 
-        self.was_updated.clear()
+            event.clear()
 
     def poll_ai(self, wait: bool, world: "World", goals: list[Goal], players: dict[str, "Player"],
                 time_: float, debug: bool):

@@ -37,7 +37,8 @@ def seeker_to_seekers(seeker: Seeker, owner: seekers.Player, config: seekers.Con
 
     out.magnet.strength = seeker.magnet
     out.target = vector_to_seekers(seeker.target)
-    out.disable_counter = seeker.disable_counter
+    out.disabled_counter = seeker.disable_counter
+    out.acceleration = vector_to_seekers(seeker.super.acceleration)
 
     return out
 

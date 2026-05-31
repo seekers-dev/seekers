@@ -209,6 +209,8 @@ class GrpcSeekersClient:
 
     def update_state(self, response: CommandResponse):
         # self._logger.debug("Updating state from CommandResponse.")
+        # self.create_new_state(response)
+        # return
 
         try:
             self.update_existing_state(response)
@@ -234,8 +236,10 @@ class GrpcSeekersClient:
             else:
                 seeker.position = vector_to_seekers(new_seeker.super.position)
                 seeker.velocity = vector_to_seekers(new_seeker.super.velocity)
+                seeker.acceleration = vector_to_seekers(new_seeker.super.acceleration)
                 seeker.target = vector_to_seekers(new_seeker.target)
                 seeker.magnet.strength = new_seeker.magnet
+                seeker.disabled_counter = new_seeker.disable_counter
 
         for new_player in response.players:
             try:
