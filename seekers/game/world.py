@@ -40,21 +40,11 @@ class World:
     def middle(self) -> Vector:
         return self.geometry / 2
 
-    def torus_difference(self, left: Vector, right: Vector, /) -> Vector:
-        best_x = self.width
-        best_y = self.height
-        for x_offset in range(-1,2):
-            right_x_offset = right.x + x_offset*self.width
-            dist_x = right_x_offset - left.x
-            if dist_x < abs(best_x) :
-                best_x = dist_x
-        for y_offset in range(-1,2):
-            right_y_offset = right.y + y_offset*self.height
-            dist_y = right_y_offset - left.y
-            if dist_y < abs(best_y) :
-                best_y = dist_y
-        return Vector(best_x, best_y)
-
+    def torus_difference(self, left: Vector, right: Vector) -> Vector:
+        return Vector(
+            (right.x - left.x + self.width / 2) % self.width - self.width / 2,
+            (right.y - left.y + self.height / 2) % self.height - self.height / 2,
+        )
     def torus_distance(self, left: Vector, right: Vector, /) -> float:
         return self.torus_difference(left, right).length()
 
