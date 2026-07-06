@@ -70,7 +70,7 @@ class GrpcSeekersServiceWrapper:
                 ) from e
             raise
 
-    def send_commands(self, commands: list[Command]) -> CommandResponse:
+    def send_commands(self, commands: list[CommandRequest.Command]) -> CommandResponse:
         if self.channel_connectivity_status != grpc.ChannelConnectivity.READY:
             raise ServerUnavailableError("Channel is not ready.")
 
@@ -202,7 +202,7 @@ class GrpcSeekersClient:
     def send_commands_and_update_state(self, new_seekers: list[seekers.Seeker]) -> None:
         # self._logger.debug(f"Sending {len(new_seekers)} commands.")
         response = self.service_wrapper.send_commands([
-            Command(seeker_id=seeker.id, target=vector_to_grpc(seeker.target), magnet=seeker.magnet.strength)
+            CommandRequest.Command(seeker_id=seeker.id, target=vector_to_grpc(seeker.target), magnet=seeker.magnet.strength)
             for seeker in new_seekers
         ])
         self.update_state(response)
@@ -226,14 +226,14 @@ class GrpcSeekersClient:
 
         for new_seeker in response.seekers:
             try:
-                seeker = self.seekers[new_seeker.super.id]
+                seeker = self.seekers[new_seeker.physical.id]
             except KeyError as e:
                 raise CouldNotUpdateExistingStateResponseInvalid(
-                    f"Invalid Response: Seeker ({new_seeker.super.id!r}) not in State.seekers. ({list(self.seekers)!r})"
+                    f"Invalid Response: Seeker ({new_seeker.physical.id!r}) not in State.seekers. ({list(self.seekers)!r})"
                 ) from e
             else:
-                seeker.position = vector_to_seekers(new_seeker.super.position)
-                seeker.velocity = vector_to_seekers(new_seeker.super.velocity)
+                seeker.position = vector_to_seekers(new_seeker.physical.position)
+                seeker.velocity = vector_to_seekers(new_seeker.physical.velocity)
                 seeker.target = vector_to_seekers(new_seeker.target)
                 seeker.magnet.strength = new_seeker.magnet
 
@@ -250,14 +250,14 @@ class GrpcSeekersClient:
 
         for new_goal in response.goals:
             try:
-                goal = self.goals[new_goal.super.id]
+                goal = self.goals[new_goal.physical.id]
             except KeyError as e:
                 raise CouldNotUpdateExistingStateResponseInvalid(
-                    f"Invalid Response: Goal ({new_goal.super.id!r}) not in State.goals. ({list(self.goals)!r})"
+                    f"Invalid Response: Goal ({new_goal.physical.id!r}) not in State.goals. ({list(self.goals)!r})"
                 ) from e
             else:
-                goal.position = vector_to_seekers(new_goal.super.position)
-                goal.velocity = vector_to_seekers(new_goal.super.velocity)
+                goal.position = vector_to_seekers(new_goal.physical.position)
+                goal.velocity = vector_to_seekers(new_goal.physical.velocity)
                 goal.time_owned = new_goal.time_owned
                 goal.owner = self.camps[new_goal.camp_id].owner if new_goal.camp_id else None
 
@@ -267,7 +267,7 @@ class GrpcSeekersClient:
         config = self.get_config()
 
         camp_replies = {camp.id: camp for camp in response.camps}
-        seeker_replies = {seeker.super.id: seeker for seeker in response.seekers}
+        seeker_replies = {seeker.physical.id: seeker for seeker in response.seekers}
 
         self.seekers = {}
         self.players = {}
@@ -293,7 +293,7 @@ class GrpcSeekersClient:
                 ) from e
 
         self.goals = {
-            goal.super.id: goal_to_seekers(goal, self.camps, config)
+            goal.physical.id: goal_to_seekers(goal, self.camps, config)
             for goal in response.goals
         }
 

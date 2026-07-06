@@ -15,10 +15,8 @@ from seekers import Camp, Player, Goal, Physical, Config
 from seekers.game.vector import Vector
 from seekers.game.seeker import Seeker
 
-import seekers.game as game
-
 def vector_to_seekers(vector: Vector2DAPI) -> Vector:
-    return game.Vector(vector.x, vector.y)
+    return Vector(vector.x, vector.y)
 
 
 def vector_to_grpc(vector: Vector) -> Vector2DAPI:
@@ -26,11 +24,11 @@ def vector_to_grpc(vector: Vector) -> Vector2DAPI:
 
 
 def seeker_to_seekers(seeker: SeekerAPI, owner: Player, config: Config) -> SeekerAPI:
-    out = game.Seeker(
+    out = Seeker(
         id_=seeker.physical.id,
         owner=owner,
-        position=vector_to_seekers(seeker.super.position),
-        velocity=vector_to_seekers(seeker.super.velocity),
+        position=vector_to_seekers(seeker.physical.position),
+        velocity=vector_to_seekers(seeker.physical.velocity),
         mass=config.seeker_mass,
         radius=config.seeker_radius,
         friction=config.seeker_friction,
@@ -57,7 +55,7 @@ def physical_to_grpc(physical: Physical) -> PhysicalAPI:
 
 def seeker_to_grpc(seeker: Seeker) -> SeekerAPI:
     return SeekerAPI(
-        super=physical_to_grpc(seeker),
+        physical=physical_to_grpc(seeker),
         player_id=seeker.owner.id,
         magnet=seeker.magnet.strength,
         target=vector_to_grpc(seeker.target),
@@ -67,9 +65,9 @@ def seeker_to_grpc(seeker: Seeker) -> SeekerAPI:
 
 def goal_to_seekers(goal: GoalAPI, camps: dict[str, Camp], config: Config) -> Goal:
     out = Goal(
-        id_=goal.super.id,
-        position=vector_to_seekers(goal.super.position),
-        velocity=vector_to_seekers(goal.super.velocity),
+        id_=goal.physical.id,
+        position=vector_to_seekers(goal.physical.position),
+        velocity=vector_to_seekers(goal.physical.velocity),
         mass=config.goal_mass,
         radius=config.goal_radius,
         friction=config.seeker_friction,
@@ -88,7 +86,7 @@ def goal_to_seekers(goal: GoalAPI, camps: dict[str, Camp], config: Config) -> Go
 
 def goal_to_grpc(goal: Goal) -> GoalAPI:
     return GoalAPI(
-        super=physical_to_grpc(goal),
+        physical=physical_to_grpc(goal),
         camp_id=goal.owner.camp.id if goal.owner else "",
         time_owned=goal.time_owned
     )
