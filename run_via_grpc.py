@@ -1,3 +1,5 @@
+from time import sleep
+
 import subprocess
 import argparse
 import time
@@ -20,7 +22,14 @@ def main():
     for script in args.ai_files:
         clients.append(subprocess.Popen(["python3", "client.py", script]))
         time.sleep(0.1)
-    server.wait()
+
+    while server.poll() is None:
+        try:
+            time.sleep(0.2)
+        except KeyboardInterrupt:
+            server.kill()
+            for client in clients:
+                client.kill()
 
 
 if __name__ == "__main__":
