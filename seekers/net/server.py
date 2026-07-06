@@ -82,7 +82,7 @@ class GrpcSeekersServicer(SeekersServicer):
             # self._logger.debug(f"Got event for next game tick. Sending status.")
 
             command_response = copy.copy(self.current_status)
-            command_response.seekers_changed = len(request.commands)
+            #command_response.seekers_changed = len(request.commands)
             return command_response
         else:
             # self._logger.debug(
