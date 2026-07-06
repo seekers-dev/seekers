@@ -41,12 +41,19 @@ class World:
         return self.geometry / 2
 
     def torus_difference(self, left: Vector, right: Vector, /) -> Vector:
-        def diff1d(length, a, b):
-            delta = abs(a - b)
-            return b - a if delta < length - delta else a - b
-
-        return Vector(diff1d(self.width, left.x, right.x),
-                      diff1d(self.height, left.y, right.y))
+        best_x = self.width
+        best_y = self.height
+        for x_offset in range(-1,2):
+            right_x_offset = right.x + x_offset*self.width
+            dist_x = right_x_offset - left.x
+            if dist_x < abs(best_x) :
+                best_x = dist_x
+        for y_offset in range(-1,2):
+            right_y_offset = right.y + y_offset*self.height
+            dist_y = right_y_offset - left.y
+            if dist_y < abs(best_y) :
+                best_y = dist_y
+        return Vector(best_x, best_y)
 
     def torus_distance(self, left: Vector, right: Vector, /) -> float:
         return self.torus_difference(left, right).length()
