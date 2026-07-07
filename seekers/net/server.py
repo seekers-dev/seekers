@@ -4,6 +4,7 @@ import copy
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+import secrets
 
 from .converters import *
 from seekers.api.seekers_pb2 import *
@@ -100,7 +101,7 @@ class GrpcSeekersServicer(SeekersServicer):
             i += 1
 
         # create new player
-        new_token = get_id("Token")
+        new_token = secrets.token_bytes(128)
         player = GrpcClientPlayer(
             token=new_token,
             id=get_id("Player"),
