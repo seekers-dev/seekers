@@ -85,19 +85,26 @@ class Seeker(physical.Physical):
         return self.is_disabled
 
     def magnetic_force(self, world_: world.World, pos: Vector) -> Vector:
-        def bump(difference) -> float:
-            return math.exp(1 / (difference ** 2 - 1)) if difference < 1 else 0
-
-        torus_diff = world_.torus_difference(self.position, pos)
-        torus_diff_len = torus_diff.length()
-
-        r = torus_diff_len / world_.diameter()
-        direction = (torus_diff / torus_diff_len) if torus_diff_len != 0 else Vector(0, 0)
-
         if self.is_disabled:
             return Vector(0, 0)
 
-        return - direction * (self.magnet.strength * bump(r * 10))
+        if self.magnet.strength == 0:
+            return Vector(0,0)
+
+        def bump(difference) -> float:
+            return math.exp(1 / (difference ** 2 - 1))
+
+
+        torus_diff = world_.torus_difference(self.position, pos)
+        torus_diff_len = torus_diff.length()
+        if torus_diff_len == 0:
+            return Vector(0,0)
+
+        r = torus_diff_len / world_.diameter() * 10
+        if r >= 1:
+            return Vector(0,0)
+        direction = (torus_diff / torus_diff_len)
+        return - direction * (self.magnet.strength * bump(r))
 
     def update_acceleration(self, world_: world.World):
         if self.disabled_counter == 0:
