@@ -101,7 +101,7 @@ class GrpcSeekersServicer(SeekersServicer):
             i += 1
 
         # create new player
-        new_token = secrets.token_bytes(128)
+        new_token = secrets.token_urlsafe(256)
         player = GrpcClientPlayer(
             token=new_token,
             id=get_id("Player"),
