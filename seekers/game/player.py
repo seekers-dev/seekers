@@ -191,6 +191,7 @@ class LocalPlayer(Player):
             ai_goal.time_owned = goal_.time_owned
 
         for player in players.values():
+            self._ai_players[player.id].score = player.score
             for seeker_id, seeker_ in player.seekers.items():
                 ai_seeker = self._ai_seekers[seeker_id]
 
