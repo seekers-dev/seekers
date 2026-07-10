@@ -11,7 +11,7 @@ import pygame
 
 import seekers.ids as ids
 from .config import *
-from ..graphics import colors, draw
+from ..graphics import colors, draw, headless_graphics
 from . import game_logic, player, seeker, goal, world
 
 __all__ = [
@@ -57,7 +57,9 @@ class SeekersGame:
         self.goals = []
         self.camps = []
 
-        self.renderer = draw.GameRenderer(
+
+        renderer = draw.GameRenderer if self.config.global_enable_rendering else headless_graphics.HeadlessGameRenderer
+        self.renderer = renderer(
             self.config,
             debug_mode=self.debug
         )

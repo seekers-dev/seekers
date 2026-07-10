@@ -12,6 +12,7 @@ RUN nix-shell --run "true"
 RUN curl -Lo seekers-api.zip https://github.com/seekers-dev/seekers-api/releases/download/prerelease/seekers-api.zip
 RUN nix-shell -p unzip --run "unzip seekers-api.zip"
 RUN nix-shell -p netcat-gnu
+RUN rm -f config.ini
 
 # Default command
 ENTRYPOINT ["nix-shell", "--run"]

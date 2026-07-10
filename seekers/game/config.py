@@ -13,6 +13,7 @@ __all__ = [
 class Config:
     """Configuration for the Seekers game."""
     global_wait_for_players: bool
+    global_enable_rendering: bool
     global_playtime: int
     global_seed: int
     global_fps: int
@@ -52,6 +53,7 @@ class Config:
 
         return cls(
             global_wait_for_players=cp.getboolean("global", "wait-for-players"),
+            global_enable_rendering=cp.getboolean("global", "enable-rendering"),
             global_playtime=cp.getint("global", "playtime"),
             global_seed=cp.getint("global", "seed"),
             global_fps=cp.getint("global", "fps"),
