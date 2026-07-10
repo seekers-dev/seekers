@@ -5,5 +5,5 @@ class HeadlessGameRenderer:
         pass
     def close(self):
         pass
-    def init(self):
+    def init(self, *args, **kwargs):
         pass
