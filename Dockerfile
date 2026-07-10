@@ -3,7 +3,7 @@ FROM nixos/nix:latest
 WORKDIR /opt
 
 # Clone the repository
-RUN nix-shell -p git --run "git clone https://github.com/seekers-dev/seekers.git"
+RUN nix-shell -p git --run "git clone --depth=1 https://github.com/seekers-dev/seekers.git"
 
 WORKDIR /opt/seekers
 
@@ -14,5 +14,5 @@ RUN nix-shell -p unzip --run "unzip seekers-api.zip"
 RUN nix-shell -p netcat-gnu
 
 # Default command
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["nix-shell", "--run"]
 CMD ["bash"]

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   server:
     build: .
@@ -11,7 +9,7 @@ services:
     networks:
       seekers:
     healthcheck:
-      test: ["CMD", "/opt/seekers/entrypoint.sh", "nc -z server 7777"]
+      test: ["CMD", "nix-shell", "-p", "netcat-gnu", "--run", "nc -z server 7777"]
       #test: ["CMD", "nix-shell" "-p", "netcat", "--run", "nc", "-z", "server", "7777"]
       interval: 2s
       timeout: 1s
