@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  server:
+    build: .
+    container_name: seekers-server
+    command:
+      - python3 seekers.py -a "server:7777"
+    expose:
+      - "7777"
+    networks:
+      seekers:
+    healthcheck:
+      test: ["CMD", "/opt/seekers/entrypoint.sh", "nc -z server 7777"]
+      #test: ["CMD", "nix-shell" "-p", "netcat", "--run", "nc", "-z", "server", "7777"]
+      interval: 2s
+      timeout: 1s
+      retries: 30
+
+  client1:
+    build: .
+    container_name: seekers-client1
+    command: 
+      - python3 client.py examples/ai-decide.py -a "server:7777"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      seekers:
+
+  client2:
+    build: .
+    container_name: seekers-client2
+    command:
+      - python3 client.py examples/ai-simple.py -a "server:7777"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      seekers:
+
+networks:
+  seekers:
+    internal: true
