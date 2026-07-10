@@ -111,10 +111,11 @@ class SeekersGame:
         while running:
             # self._logger.debug(f"Tick {self.ticks:_}")
 
-            # handle pygame events
-            for e in pygame.event.get():
-                if e.type == pygame.QUIT:
-                    running = False
+            if self.config.global_enable_rendering:
+                # handle pygame events
+                for e in pygame.event.get():
+                    if e.type == pygame.QUIT:
+                        running = False
 
             # perform game logic
             for _ in range(self.config.global_speed):
