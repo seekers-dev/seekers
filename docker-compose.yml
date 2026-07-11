@@ -1,43 +1,46 @@
 services:
   server:
     build: .
-    container_name: seekers-server
+    container_name: seekers-server-${PORT}
     command:
-      - python3 seekers.py -a "server:7777"
+      - python3 seekers.py -a "server:${PORT}"
     expose:
-      - "7777"
+      - ${PORT}
     networks:
       seekers:
     healthcheck:
-      test: ["CMD", "nix-shell", "-p", "netcat-gnu", "--run", "nc -z server 7777"]
-      #test: ["CMD", "nix-shell" "-p", "netcat", "--run", "nc", "-z", "server", "7777"]
+      test: ["CMD", "nix-shell", "-p", "netcat-gnu", "--run", "nc -z server ${PORT}"]
       interval: 2s
       timeout: 1s
       retries: 30
     volumes:
-      - ./config.ini:/opt/seekers/config.ini:ro
+      - ${CONFIG_LOCATION}:/opt/seekers/config.ini:ro
 
   client1:
     build: .
-    container_name: seekers-client1
+    container_name: seekers-client-1-${PORT}
     command: 
-      - python3 client.py examples/ai-decide.py -a "server:7777"
+      - python3 client.py ai1.py -a "server:${PORT}"
     depends_on:
       server:
         condition: service_healthy
     networks:
       seekers:
+    volumes:
+      - ./${AI1_LOCATION}:/opt/seekers/ai1.py:ro
 
   client2:
     build: .
-    container_name: seekers-client2
+    container_name: seekers-client-2-${PORT}
     command:
-      - python3 client.py examples/ai-simple.py -a "server:7777"
+      - python3 client.py ai2.py -a "server:${PORT}"
     depends_on:
       server:
         condition: service_healthy
     networks:
       seekers:
+    volumes:
+      - ./${AI2_LOCATION}:/opt/seekers/ai2.py:ro
 
 networks:
   seekers:
