@@ -10,9 +10,9 @@ services:
       seekers:
     healthcheck:
       test: ["CMD", "nix-shell", "-p", "netcat-gnu", "--run", "nc -z server ${PORT}"]
-      interval: 2s
-      timeout: 1s
-      retries: 30
+      interval: 3s
+      timeout: 2s
+      retries: 300
     volumes:
       - ${CONFIG_LOCATION}:/opt/seekers/config.ini:ro
 

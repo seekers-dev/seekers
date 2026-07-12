@@ -9,11 +9,11 @@ import re
 import tempfile
 import configparser
 import secrets
+import argparse
 
 
 class Tournament:
-    N_SEEDS = 5
-    def __init__(self, ai_directory = "submissions"):
+    def __init__(self, ai_directory = "submissions", n_seeds : int = 1):
         self.used_ports = set()
         self.next_port = 1200
         self.used_seeds = set()
@@ -26,6 +26,7 @@ class Tournament:
             } for ai in self.ais
         }
         self.config_directory = tempfile.TemporaryDirectory()
+        self.N_SEEDS = n_seeds
 
 
     @staticmethod
@@ -34,13 +35,14 @@ class Tournament:
 
     def process_result(self, config_location, ai1, ai2):
         process = self.instances[(config_location, ai1, ai2)]
-        print(f"Waiting for match {ai1} vs {ai2} with config {config_location}")
+        print(f"Processing match {ai1} vs {ai2} with config {config_location}")
         stdout, stderr = process.communicate()
         ma = re.findall(r'\|\s*(\d+)\s+P\.:\s+ai(\d)', stdout)
         if len(ma) < 2:
             print(stdout)
             print(stderr)
-            raise Exception("Unexpected docker output")
+            return
+            #raise Exception("Unexpected docker output")
         ais = [ai1,ai2]
         small_results = {}
         for (score, index) in ma:
@@ -62,9 +64,9 @@ class Tournament:
 
 
     def start_once(self, config_location: str, ai1: str, ai2: str):
-        print(f"Starting match {ai1} vs {ai2} with config {config_location}")
-        env = os.environ.copy()
         port = self.get_and_inc_port()
+        print(f"Starting match {ai1} vs {ai2} with config {config_location} on port {port}")
+        env = os.environ.copy()
         env["PORT"] = f"{port}"
         env["CONFIG_LOCATION"] = config_location
         env["AI1_LOCATION"] = ai1
@@ -80,13 +82,14 @@ class Tournament:
         )
         )
 
-    def process_results(self):
-        for k in self.instances.keys():
-            self.process_result(k[0], k[1], k[2])
+    def collect_results(self):
+        while len(self.instances):
+            self.reap_finished()
+            time.sleep(0.1)
 
     def run_tournament(self):
         self.start_all()
-        self.process_results()
+        self.collect_results()
 
     def start_all(self):
         [self.get_new_seed() for _ in range(self.N_SEEDS)]
@@ -96,6 +99,7 @@ class Tournament:
             for ai1 in self.ais:
                 for ai2 in self.ais:
                     while not self.should_spawn_another_match():
+                        self.reap_finished()
                         time.sleep(0.1)
                     if ai1 != ai2:
                         self.start_once(
@@ -103,9 +107,6 @@ class Tournament:
                             ai1,
                             ai2
                         )
-                    time.sleep(
-                        ticks / os.cpu_count() / 500
-                    )
 
 
     def print_results(self):
@@ -131,11 +132,9 @@ class Tournament:
                     loss += 1
         return win,draw,loss
 
-    @staticmethod
-    def should_spawn_another_match():
-        load1, load5, load15 = os.getloadavg()
+    def should_spawn_another_match(self):
         cpus = os.cpu_count()
-        return load1 < cpus * 0.9
+        return len(self.instances)*2.4 < cpus
 
     def cleanup(self):
         for port in self.used_ports:
@@ -178,11 +177,33 @@ class Tournament:
         self.used_seeds.add(seed)
         return seed
 
-if __name__ == "__main__":
-    t = Tournament("submissions2")
+    def reap_finished(self):
+        finished = []
+
+        for key, proc in self.instances.items():
+            if proc.poll() is not None:
+                self.process_result(*key)
+                finished.append(key)
+
+        for key in finished:
+            del self.instances[key]
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run python seekers AIs.")
+    parser.add_argument("--submissions", type=str, default="submissions",
+                        help="Path to submissions")
+    parser.add_argument("--seeds", "-s", type=int, default=1,
+                        help="Number of seeds to use")
+    args = parser.parse_args()
+    t = Tournament(args.submissions, args.seeds)
     try:
         t.run_tournament()
+        print(t.results)
         t.print_results()
+
     finally:
         t.cleanup()
-    #print(t.results)
+
+if __name__ == "__main__":
+    main()
