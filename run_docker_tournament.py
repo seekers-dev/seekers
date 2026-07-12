@@ -10,15 +10,16 @@ import tempfile
 import configparser
 import secrets
 import argparse
+import hashlib
 
 
 class Tournament:
-    def __init__(self, ai_directory = "submissions", n_seeds : int = 1):
+    def __init__(self, args):
         self.used_ports = set()
         self.next_port = 1200
         self.used_seeds = set()
         self.instances : dict[tuple[str,str,str], subprocess.Popen]= {}
-        self.AIS_DIRECTORY = ai_directory
+        self.AIS_DIRECTORY = args.submissions
         self.ais = self.get_files(self.AIS_DIRECTORY)
         self.results = {
             ai:{
@@ -26,23 +27,38 @@ class Tournament:
             } for ai in self.ais
         }
         self.config_directory = tempfile.TemporaryDirectory()
-        self.N_SEEDS = n_seeds
+        self.N_SEEDS = args.seeds
+        self.LOAD_FACTOR = args.load_factor
 
 
     @staticmethod
     def get_files(dir: str) -> list[str]:
         return [dir + "/" + p.name for p in Path(dir).iterdir() if p.is_file()]
 
+    @staticmethod
+    def write_log(content: str) -> Path:
+        log_dir = Path("logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        path = log_dir / f"{digest}.log"
+
+        path.write_text(content, encoding="utf-8")
+
+        return path
+
     def process_result(self, config_location, ai1, ai2):
         process = self.instances[(config_location, ai1, ai2)]
-        print(f"Processing match {ai1} vs {ai2} with config {config_location}")
+        print(f"Processing {self.get_match_string(config_location,ai1,ai2)}")
         stdout, stderr = process.communicate()
         ma = re.findall(r'\|\s*(\d+)\s+P\.:\s+ai(\d)', stdout)
         if len(ma) < 2:
-            print(stdout)
-            print(stderr)
+            stderr_log_path = self.write_log(stderr)
+            stdout_log_path = self.write_log(stdout)
+            print(f"Failed to process {self.get_match_string(config_location,ai1,ai2)}")
+            print(f"Writing stdout log to {stdout_log_path} and stderr log to {stderr_log_path}")
+
             return
-            #raise Exception("Unexpected docker output")
         ais = [ai1,ai2]
         small_results = {}
         for (score, index) in ma:
@@ -62,10 +78,14 @@ class Tournament:
             raise OverflowError("too many ports used")
         return retval
 
+    @staticmethod
+    def get_match_string(config_location: str, ai1: str, ai2: str) -> str:
+        return f"match {ai1} vs {ai2} with config {config_location}"
+
 
     def start_once(self, config_location: str, ai1: str, ai2: str):
         port = self.get_and_inc_port()
-        print(f"Starting match {ai1} vs {ai2} with config {config_location} on port {port}")
+        print(f"Starting {self.get_match_string(config_location,ai1,ai2)} on port {port}")
         env = os.environ.copy()
         env["PORT"] = f"{port}"
         env["CONFIG_LOCATION"] = config_location
@@ -134,7 +154,7 @@ class Tournament:
 
     def should_spawn_another_match(self):
         cpus = os.cpu_count()
-        return len(self.instances)*2.4 < cpus
+        return len(self.instances)*self.LOAD_FACTOR < cpus
 
     def cleanup(self):
         for port in self.used_ports:
@@ -195,8 +215,10 @@ def main():
                         help="Path to submissions")
     parser.add_argument("--seeds", "-s", type=int, default=1,
                         help="Number of seeds to use")
+    parser.add_argument("--load_factor",  type=float, default=2.5,
+                        help="Number of cores to aim for for each game")
     args = parser.parse_args()
-    t = Tournament(args.submissions, args.seeds)
+    t = Tournament(args)
     try:
         t.run_tournament()
         print(t.results)
