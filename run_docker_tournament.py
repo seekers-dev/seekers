@@ -193,7 +193,7 @@ class Tournament:
         return int(config["global"]["playtime"])
 
     def get_new_seed(self):
-        seed = int.from_bytes(secrets.token_bytes(32))
+        seed = int.from_bytes(secrets.token_bytes(32), "little")
         self.used_seeds.add(seed)
         return seed
 
